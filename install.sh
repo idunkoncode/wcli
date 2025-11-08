@@ -1,14 +1,5 @@
-Here is the `install.sh` script, converted to install `fcli` on Fedora.
-
-All references to `dcli` have been changed to `fcli`, and the dependency checks now point to `dnf` instead of `pacman`. The `paru` dependency, which is not relevant to Fedora, has been removed.
-
------
-
-### `install.sh` (for Fedora/fcli)
-
-```bash
 #!/usr/bin/env bash
-# fcli installation script
+# sys-sync installation script
 
 set -euo pipefail
 
@@ -21,11 +12,11 @@ NC='\033[0m' # No Color
 
 # Installation paths
 INSTALL_DIR="/usr/local/bin"
-SCRIPT_NAME="fcli"
+SCRIPT_NAME="sys-sync"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║  fcli Installation Script              ║${NC}"
+echo -e "${BLUE}║  sys-sync Installation Script          ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -36,15 +27,16 @@ if [ "$EUID" -eq 0 ]; then
   exit 1
 fi
 
-# Check if fcli script exists
+# Check if sys-sync script exists
 if [ ! -f "$SCRIPT_DIR/$SCRIPT_NAME" ]; then
-  echo -e "${RED}Error: fcli script not found in $SCRIPT_DIR${NC}" >&2
+  echo -e "${RED}Error: ${SCRIPT_NAME} script not found in $SCRIPT_DIR${NC}" >&2
+  echo "Make sure this installer is in the same directory as the 'sys-sync' script." >&2
   exit 1
 fi
 
-# Check if fcli is already installed
+# Check if sys-sync is already installed
 if [ -f "$INSTALL_DIR/$SCRIPT_NAME" ]; then
-  echo -e "${YELLOW}Warning: fcli is already installed at $INSTALL_DIR/$SCRIPT_NAME${NC}"
+  echo -e "${YELLOW}Warning: ${SCRIPT_NAME} is already installed at $INSTALL_DIR/$SCRIPT_NAME${NC}"
   read -p "Do you want to reinstall? [y/N] " -n 1 -r
   echo
   if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -53,12 +45,12 @@ if [ -f "$INSTALL_DIR/$SCRIPT_NAME" ]; then
   fi
 fi
 
-# Install fcli
-echo -e "${BLUE}Installing fcli to $INSTALL_DIR...${NC}"
+# Install sys-sync
+echo -e "${BLUE}Installing ${SCRIPT_NAME} to $INSTALL_DIR...${NC}"
 if sudo cp "$SCRIPT_DIR/$SCRIPT_NAME" "$INSTALL_DIR/$SCRIPT_NAME"; then
-  echo -e "${GREEN}✓${NC} Copied fcli to $INSTALL_DIR"
+  echo -e "${GREEN}✓${NC} Copied ${SCRIPT_NAME} to $INSTALL_DIR"
 else
-  echo -e "${RED}Error: Failed to copy fcli${NC}" >&2
+  echo -e "${RED}Error: Failed to copy ${SCRIPT_NAME}${NC}" >&2
   exit 1
 fi
 
@@ -71,29 +63,59 @@ else
 fi
 
 # Verify installation
-if command -v fcli &> /dev/null; then
-  echo -e "${GREEN}✓${NC} fcli is now available in PATH"
+if command -v $SCRIPT_NAME &> /dev/null; then
+  echo -e "${GREEN}✓${NC} ${SCRIPT_NAME} is now available in PATH"
 else
-  echo -e "${RED}Error: fcli not found in PATH after installation${NC}" >&2
+  echo -e "${RED}Error: ${SCRIPT_NAME} not found in PATH after installation${NC}" >&2
   echo "You may need to restart your terminal or run: hash -r" >&2
   exit 1
 fi
 
-# Check for dependencies
+# ============================================================================
+# CHECK DEPENDENCIES
+# ============================================================================
+
 echo ""
 echo -e "${BLUE}Checking dependencies...${NC}"
 
-dependencies=("yq" "timeshift")
-missing_deps=()
+# Get distro-specific install commands
+DEP_YQ_INSTALL=""
+DEP_TS_INSTALL=""
+DEP_PARU_NOTE=false
 
-for dep in "${dependencies[@]}"; do
-  if command -v "$dep" &> /dev/null; then
-    echo -e "${GREEN}✓${NC} $dep installed"
-  else
-    echo -e "${YELLOW}⚠${NC} $dep not installed (required for some features)"
-    missing_deps+=("$dep")
-  fi
-done
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    DISTRO_ID=$ID
+    [ -z "$DISTRO_ID" ] && [ -n "$ID_LIKE" ] && DISTRO_ID=$ID_LIKE
+fi
+
+case $DISTRO_ID in
+    fedora)
+        DEP_YQ_INSTALL="sudo dnf install yq"
+        DEP_TS_INSTALL="sudo dnf install timeshift"
+        ;;
+    arch)
+        DEP_YQ_INSTALL="sudo pacman -S go-yq"
+        DEP_TS_INSTALL="sudo pacman -S timeshift"
+        DEP_PARU_NOTE=true
+        ;;
+    debian|ubuntu|pop)
+        DEP_YQ_INSTALL="sudo apt install yq"
+        DEP_TS_INSTALL="sudo apt install timeshift"
+        ;;
+    *)
+        echo -e "${YELLOW}Warning: Could not detect distro for dependency check.${NC}"
+        ;;
+esac
+
+# Check for dependencies
+missing_deps=()
+if ! command -v yq &> /dev/null; then
+  missing_deps+=("yq")
+fi
+if ! command -v timeshift &> /dev/null; then
+  missing_deps+=("timeshift")
+fi
 
 if [ ${#missing_deps[@]} -gt 0 ]; then
   echo ""
@@ -101,15 +123,22 @@ if [ ${#missing_deps[@]} -gt 0 ]; then
   for dep in "${missing_deps[@]}"; do
     case $dep in
       yq)
-        echo "  • yq - Required for YAML parsing"
-        echo "    Install with: sudo dnf install yq"
+        echo "  • yq - (REQUIRED) Required for all operations"
+        [ -n "$DEP_YQ_INSTALL" ] && echo "    Install with: ${DEP_YQ_INSTALL}"
         ;;
       timeshift)
-        echo "  • timeshift - System backup (optional, for fcli backup commands)"
-        echo "    Install with: sudo dnf install timeshift"
+        echo "  • timeshift - (Optional) Required for 'sys-sync backup' commands"
+        [ -n "$DEP_TS_INSTALL" ] && echo "    Install with: ${DEP_TS_INSTALL}"
         ;;
     esac
   done
+fi
+
+if [ "$DEP_PARU_NOTE" = true ] && ! command -v paru &> /dev/null; then
+  echo ""
+  echo -e "${YELLOW}Optional recommendation for Arch:${NC}"
+  echo "  • paru - (Optional) For 'sys-sync update' and search."
+  echo "    Install from: https://github.com/morganamilo/paru"
 fi
 
 echo ""
@@ -120,11 +149,10 @@ echo ""
 echo "Next steps:"
 echo ""
 echo "  First computer?"
-echo "    1. Run: fcli init"
-echo "    2. Run: fcli repo init (to set up git)"
+echo "    1. Run: sys-sync init"
+echo "    2. Run: sys-sync repo init (to set up git)"
 echo ""
 echo "  Additional computer?"
-echo "    • Run: fcli repo clone"
+echo "    • Run: sys-sync repo clone"
 echo ""
-echo "Run 'fcli help' to see all available commands"
-```
+echo "Run 'sys-sync help' to see all available commands"
