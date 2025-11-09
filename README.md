@@ -8,23 +8,33 @@ A declarative package management CLI tool for Linux, inspired by NixOS. Supports
 
 Features
 
-    Declarative Package Management: Define your packages in YAML files and sync your system to match.
-    Module System: Organize packages into reusable modules (gaming, development, etc.).
-    Host-Specific Configurations: Maintain different package sets per machine.
-    Automatic Backups: Integrates with Timeshift for automatic snapshots before changes.
-    Conflict Detection: Prevents enabling conflicting modules.
-    Post-Install Hooks: (Future feature) Run scripts after package installation.
-    Package Management Shortcuts: Quick wrappers around native package managers (dnf, apt, pacman, etc.).
+*** Declarative Package Management: Define your packages in YAML files and sync your system to match.
+
+*** Module System: Organize packages into reusable modules (gaming, development, etc.).
+
+*** Host-Specific Configurations: Maintain different package sets per machine.
+
+*** Automatic Backups: Integrates with Timeshift for automatic snapshots before changes.
+    
+*** Conflict Detection: Prevents enabling conflicting modules.
+
+*** Post-Install Hooks: (Future feature) Run scripts after package installation.
+    
+*** Package Management Shortcuts: Quick wrappers around native package managers (dnf, apt, pacman, etc.).
 
 Installation
 
 Prerequisites
 
-    A supported Linux distribution (Fedora, Arch, Debian, openSUSE, Gentoo, Void)
-    python3
-    python3-yaml (or pip install pyyaml)
-    git (for repository management)
-    timeshift (optional, for backup functionality)
+* A supported Linux distribution (Fedora, Arch, Debian, openSUSE, Gentoo, Void)
+    
+* python3
+     
+* python3-yaml (or pip install pyyaml)
+    
+* git (for repository management)
+     
+* timeshift (optional, for backup functionality)
   
 Install
     
@@ -49,11 +59,12 @@ After installation, initialize your configuration directory:
 Declarative Package Management
 
 Define Base Packages
-
-Edit ~/.config/wcli-config/packages/base.yaml. The wcli init command will have already pre-filled this with sensible defaults for your OS.
+    
+*** Edit ~/.config/wcli-config/packages/base.yaml. The wcli init command will have already pre-filled this with ensible defaults for your OS.
 
 Define Host-Specific Packages
-Edit ~/.config/wcli-config/packages/hosts/{hostname}.yaml:
+    
+***Edit ~/.config/wcli-config/packages/hosts/{hostname}.yaml:
 
     YAML
     # Packages specific to this machine
