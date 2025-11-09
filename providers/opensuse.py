@@ -37,15 +37,14 @@ class Provider(BaseProvider):
             return set()
 
     def get_deps(self) -> dict:
-        # <-- CHANGE: Added snapper -->
         return {
             "yq": "sudo zypper install yq",
             "timeshift": "sudo zypper install timeshift",
-            "snapper": "sudo zypper install snapper"
+            "snapper": "sudo zypper install snapper",
+            "flatpak": "sudo zypper install flatpak"
         }
 
     def get_base_packages(self) -> dict:
-        # <-- CHANGE: Added snapper (openSUSE default) -->
         return {
             "description": "Base packages for all openSUSE machines",
             "packages": [
@@ -55,7 +54,8 @@ class Provider(BaseProvider):
                 "vim",
                 "git",
                 "yq",
-                "snapper"
+                "snapper",
+                "flatpak"
             ]
         }
 
