@@ -1,6 +1,9 @@
-
 # providers/base_provider.py
 from abc import ABC, abstractmethod
+
+# <-- NEW: Add colors for warnings -->
+YELLOW = '\033[1;33m'
+NC = '\033[0m'
 
 class BaseProvider(ABC):
     """
@@ -41,3 +44,18 @@ class BaseProvider(ABC):
     def get_base_packages(self) -> dict:
         """Return a dict of base packages for the 'init' command."""
         pass
+
+    # --- NEW: Optional Helper Methods ---
+    # These are not abstract. Providers can override them if they support them.
+    
+    def _unsupported(self, feature_name: str) -> bool:
+        """Default function for unsupported features."""
+        print(f"{YELLOW}Warning: {feature_name} packages are declared, but this system's provider ({self.__class__.__name__}) does not support them. Skipping.{NC}")
+        return False
+
+    def install_aur(self, packages: list) -> bool: return self._unsupported("AUR")
+    def install_copr(self, copr_map: dict) -> bool: return self._unsupported("COPR")
+    def install_ppa(self, ppa_map: dict) -> bool: return self._unsupported("PPA")
+    def install_obs(self, obs_map: dict) -> bool: return self._unsupported("OBS")
+    def install_overlay(self, overlay_map: dict) -> bool: return self._unsupported("Gentoo Overlay")
+    def install_src(self, packages: list) -> bool: return self._unsupported("Void Src")
