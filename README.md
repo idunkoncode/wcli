@@ -1,4 +1,4 @@
-Here is the updated README.md file, fully converted to match the new wcli multi-distro Python tool.
+
 
 All commands, paths, and installation instructions have been updated to reflect the new Python version.
 
