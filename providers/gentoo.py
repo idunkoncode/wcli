@@ -55,17 +55,16 @@ class Provider(BaseProvider):
             return set()
 
     def get_deps(self) -> dict:
-        # <-- CHANGE: Added snapper -->
         return {
             "yq": "sudo emerge app-misc/yq",
             "timeshift": "sudo emerge app-backup/timeshift",
             "snapper": "sudo emerge sys-fs/snapper",
+            "flatpak": "sudo emerge sys-apps/flatpak",
             "portage-utils": "sudo emerge app-portage/portage-utils",
             "eselect-repository": "sudo emerge app-eselect/eselect-repository"
         }
 
     def get_base_packages(self) -> dict:
-        # <-- CHANGE: Added snapper (Gentoo/Btrfs default) -->
         return {
             "description": "Base packages for all Gentoo machines",
             "packages": [
@@ -75,7 +74,8 @@ class Provider(BaseProvider):
                 "net-misc/networkmanager",
                 "app-editors/vim",
                 "dev-vcs/git",
-                "sys-fs/snapper"
+                "sys-fs/snapper",
+                "sys-apps/flatpak"
             ],
             "gentoo_overlay": {
                 "guru": []
