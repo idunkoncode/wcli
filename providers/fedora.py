@@ -77,5 +77,3 @@ class Provider(BaseProvider):
             if not self.install(all_packages):
                 all_ok = False
         return all_ok
-
-
