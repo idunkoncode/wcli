@@ -55,7 +55,7 @@ case $DISTRO_ID in
         DEP_TS_INSTALL="sudo dnf install timeshift"
         ;;
     opensuse)
-        echo -e "${BLUE}Fedora system detected${NC}"
+        echo -e "${BLUE}Opensuse system detected${NC}"
         CMD_INSTALL="sudo zypper install -y"
         CMD_REMOVE="sudo zypper remove -y"
         CMD_UPDATE="sudo zypper update -y"
