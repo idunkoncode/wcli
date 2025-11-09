@@ -5,7 +5,6 @@ import shutil
 from pathlib import Path
 from .base_provider import BaseProvider
 
-# <-- ADDED COLORS -->
 YELLOW = '\033[1;33m'
 RED = '\033[0;31m'
 NC = '\033[0m'
@@ -30,7 +29,6 @@ def _run_cmd_capture(cmd: list) -> subprocess.CompletedProcess:
 class Provider(BaseProvider):
     """Debian/Ubuntu provider implementation."""
     
-    # <-- CHANGE: Updated __init__ to check for dirmngr -->
     def __init__(self):
         if not shutil.which("add-apt-repository"):
             print(f"{YELLOW}Warning: 'add-apt-repository' not found. PPAs will not work.{NC}")
@@ -69,7 +67,6 @@ class Provider(BaseProvider):
         except (subprocess.CalledProcessError, FileNotFoundError):
             return set()
 
-    # <-- CHANGE: Added dirmngr to deps -->
     def get_deps(self) -> dict:
         return {
             "yq": "sudo apt install yq",
@@ -100,13 +97,11 @@ class Provider(BaseProvider):
             }
         }
 
-    # <-- CHANGE: Updated PPA logic to check for dirmngr -->
     def install_ppa(self, ppa_map: dict) -> bool:
         if not self.can_add_ppa:
             print(f"{RED}Error: 'add-apt-repository' is not available. Cannot add PPAs.{NC}")
             return False
         
-        # <-- NEW: Check for dirmngr before starting -->
         if not self.can_import_keys:
             print(f"{RED}Error: 'dirmngr' is not installed. Cannot import PPA GPG keys.{NC}")
             print(f"{YELLOW}Please run 'sudo apt install dirmngr' or add 'dirmngr' to your 'base.yaml' and run 'wcli sync' first.{NC}")
