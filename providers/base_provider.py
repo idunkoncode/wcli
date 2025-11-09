@@ -1,9 +1,27 @@
 # providers/base_provider.py
 from abc import ABC, abstractmethod
+import subprocess
+import shutil
 
-# <-- NEW: Add colors for warnings -->
+# <-- NEW: Add colors and helpers -->
 YELLOW = '\033[1;33m'
+RED = '\033[0;31m'
 NC = '\033[0m'
+
+def _run_cmd_interactive(cmd: list) -> bool:
+    """
+    Helper to run an interactive command (like flatpak install)
+    that streams output to the user.
+    """
+    try:
+        # Runs the command and streams STDOUT/STDERR to the user's terminal
+        subprocess.run(cmd, check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+    except KeyboardInterrupt:
+        print(f"\n{YELLOW}Command cancelled.{NC}")
+        return False
 
 class BaseProvider(ABC):
     """
@@ -14,8 +32,10 @@ class BaseProvider(ABC):
     def install(self, packages: list) -> bool:
         """Install a list of packages."""
         pass
+    
+    # ... (all other abstract methods like remove, update, etc. stay the same) ...
 
-    @abstractmethod
+    @abstractabstractmethod
     def remove(self, packages: list) -> bool:
         """Remove a list of packages."""
         pass
@@ -45,8 +65,7 @@ class BaseProvider(ABC):
         """Return a dict of base packages for the 'init' command."""
         pass
 
-    # --- NEW: Optional Helper Methods ---
-    # These are not abstract. Providers can override them if they support them.
+    # --- Optional Helper Methods ---
     
     def _unsupported(self, feature_name: str) -> bool:
         """Default function for unsupported features."""
@@ -59,3 +78,30 @@ class BaseProvider(ABC):
     def install_obs(self, obs_map: dict) -> bool: return self._unsupported("OBS")
     def install_overlay(self, overlay_map: dict) -> bool: return self._unsupported("Gentoo Overlay")
     def install_src(self, packages: list) -> bool: return self._unsupported("Void Src")
+
+    # <-- NEW: Universal Flatpak Installer -->
+    def install_flatpak(self, packages: list) -> bool:
+        """
+        Installs a list of Flatpaks.
+        This logic is universal and shared by all providers.
+        """
+        if not shutil.which("flatpak"):
+            print(f"{RED}Error: 'flatpak' command not found. Cannot install Flatpaks.{NC}")
+            deps = self.get_deps()
+            print(f"Please install it first: {deps.get('flatpak', 'sudo <your-package-manager> install flatpak')}")
+            return False
+        
+        # We must add flathub if it's not already added
+        try:
+            repo_list = subprocess.run(["flatpak", "remotes", "--columns=name"], capture_output=True, text=True, check=True).stdout
+            if "flathub" not in repo_list:
+                print(f"{YELLOW}Warning: 'flathub' remote not found. Adding it now...{NC}")
+                if not _run_cmd_interactive(["sudo", "flatpak", "remote-add", "--if-not-exists", "flathub", "https://flathub.org/repo/flathub.flatpakrepo"]):
+                    print(f"{RED}Error: Failed to add 'flathub' remote. Cannot install packages.{NC}")
+                    return False
+        except Exception as e:
+            print(f"{RED}Error checking flatpak remotes: {e}{NC}")
+            return False
+
+        # Install the packages
+        return _run_cmd_interactive(["sudo", "flatpak", "install", "-y", "--non-interactive", "flathub"] + packages)
