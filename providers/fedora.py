@@ -1,4 +1,3 @@
-
 # providers/fedora.py
 import subprocess
 from .base_provider import BaseProvider
@@ -53,5 +52,24 @@ class Provider(BaseProvider):
                 "vim-enhanced",
                 "git",
                 "yq"
-            ]
+            ],
+            "fedora_copr": {
+                "atim/heroic-games-launcher": ["heroic-games-launcher"]
+            }
         }
+
+    # --- NEW: COPR Helper Function ---
+    def install_copr(self, copr_map: dict) -> bool:
+        all_ok = True
+        all_packages = []
+        for repo, packages in copr_map.items():
+            if not run_cmd(["sudo", "dnf", "copr", "enable", "-y", repo]):
+                print(f"Warning: Failed to enable COPR repo: {repo}")
+                all_ok = False
+            else:
+                all_packages.extend(packages)
+        
+        if all_packages:
+            if not self.install(all_packages):
+                all_ok = False
+        return all_ok
