@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 import subprocess
 import shutil
 
-# <-- NEW: Add colors and helpers -->
+# --- Add colors for warnings ---
 YELLOW = '\033[1;33m'
 RED = '\033[0;31m'
 NC = '\033[0m'
@@ -32,10 +32,8 @@ class BaseProvider(ABC):
     def install(self, packages: list) -> bool:
         """Install a list of packages."""
         pass
-    
-    # ... (all other abstract methods like remove, update, etc. stay the same) ...
 
-    @abstractabstractmethod
+    @abstractmethod
     def remove(self, packages: list) -> bool:
         """Remove a list of packages."""
         pass
@@ -79,7 +77,7 @@ class BaseProvider(ABC):
     def install_overlay(self, overlay_map: dict) -> bool: return self._unsupported("Gentoo Overlay")
     def install_src(self, packages: list) -> bool: return self._unsupported("Void Src")
 
-    # <-- NEW: Universal Flatpak Installer -->
+    # --- Universal Flatpak Installer ---
     def install_flatpak(self, packages: list) -> bool:
         """
         Installs a list of Flatpaks.
