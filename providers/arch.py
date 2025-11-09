@@ -61,16 +61,15 @@ class Provider(BaseProvider):
             return set()
 
     def get_deps(self) -> dict:
-        # <-- CHANGE: Added snapper -->
         return {
             "yq": "sudo pacman -S go-yq",
             "timeshift": "sudo pacman -S timeshift",
             "snapper": "sudo pacman -S snapper",
+            "flatpak": "sudo pacman -S flatpak",
             "paru": "(Install 'paru' or 'yay' from the AUR)"
         }
 
     def get_base_packages(self) -> dict:
-        # <-- CHANGE: Added timeshift (common Arch default) -->
         return {
             "description": "Base packages for all Arch machines",
             "packages": [
@@ -81,7 +80,8 @@ class Provider(BaseProvider):
                 "vim",
                 "git",
                 "go-yq",
-                "timeshift"
+                "timeshift",
+                "flatpak"
             ],
             "arch_aur": [
                 "paru" 
