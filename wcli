@@ -105,11 +105,19 @@ def write_config(config: dict):
         print(f"{RED}Error writing {CONFIG_FILE}: {e}{NC}")
         sys.exit(1)
 
-def get_declared_packages(config: dict) -> set:
+# <-- CHANGE: This function is now more powerful.
+def get_declared_packages(config: dict) -> dict:
     """
-    Parses all base, host, and module YAMLs to get a set of declared packages.
+    Parses all YAMLs to get a dictionary of all declared package lists.
     """
-    all_packages = set()
+    #
+    package_lists = {
+        "packages": set(),
+        "arch_aur": set(),
+        "fedora_copr": set(),
+        "debian_ppa": set(),
+        # Add more keys here as needed
+    }
     excluded_packages = set()
     hostname = config.get('host', '')
 
@@ -118,41 +126,42 @@ def get_declared_packages(config: dict) -> set:
             try:
                 with open(file_path, 'r') as f:
                     data = yaml.safe_load(f)
-                    if data and "packages" in data and data["packages"]:
-                        return set(data["packages"])
+                    if not data:
+                        return
+                    
+                    #
+                    for key in package_lists.keys():
+                        if key in data and data[key]:
+                            package_lists[key].update(data[key])
+                            
+                    if "exclude" in data and data["exclude"]:
+                        excluded_packages.update(data["exclude"])
+                        
             except Exception as e:
                 print(f"{YELLOW}Warning: Could not parse {file_path}: {e}{NC}")
-        return set()
 
     # 1. Load base packages
-    all_packages.update(load_pkgs_from_file(PACKAGES_DIR / "base.yaml"))
+    load_pkgs_from_file(PACKAGES_DIR / "base.yaml")
 
     # 2. Load host-specific packages
     host_file = PACKAGES_DIR / "hosts" / f"{hostname}.yaml"
-    if host_file.exists():
-        all_packages.update(load_pkgs_from_file(host_file))
-        # Get exclusions
-        try:
-            with open(host_file, 'r') as f:
-                data = yaml.safe_load(f)
-                if data and "exclude" in data and data["exclude"]:
-                    excluded_packages.update(data["exclude"])
-        except Exception as e:
-            print(f"{YELLOW}Warning: Could not parse {host_file} for exclusions: {e}{NC}")
-
+    load_pkgs_from_file(host_file)
 
     # 3. Load enabled module packages
-    if "enabled_modules" in config and config["enabled_modules"]:
+    if config.get("enabled_modules"):
         for module in config["enabled_modules"]:
             module_file = PACKAGES_DIR / "modules" / f"{module}.yaml"
-            all_packages.update(load_pkgs_from_file(module_file))
+            load_pkgs_from_file(module_file)
 
     # 4. Load additional packages from config
-    if "additional_packages" in config and config["additional_packages"]:
-        all_packages.update(config["additional_packages"])
+    if config.get("additional_packages"):
+        package_lists["packages"].update(config["additional_packages"])
 
-    # 5. Remove excluded packages
-    return all_packages - excluded_packages
+    # 5. Apply exclusions
+    package_lists["packages"] -= excluded_packages
+    
+    return package_lists
+    #
 
 def run_cmd(cmd: list, cwd: Path = None, check: bool = True) -> subprocess.CompletedProcess:
     """Helper to run a subprocess command."""
@@ -173,13 +182,18 @@ def create_backup():
 
 # --- Command Functions ---
 
+# <-- CHANGE: This function is now much smarter.
 def cmd_sync(provider, args):
     """
     Declarative sync command.
     """
     print(f"{BLUE}Loading package configuration...{NC}")
     config = load_config()
-    declared_packages = get_declared_packages(config)
+    
+    # 
+    all_package_lists = get_declared_packages(config)
+    declared_packages = all_package_lists["packages"]
+    
     installed_packages = provider.get_installed_packages()
 
     to_install = list(declared_packages - installed_packages)
@@ -198,21 +212,43 @@ def cmd_sync(provider, args):
         else:
             print(f"{YELLOW}Warning: State file not found. Cannot prune.{NC}")
     
+    # 
+    # --- Helper Package Logic ---
+    #
+    
+    # AUR packages
+    to_install_aur = list(all_package_lists.get("arch_aur", set()))
+    
+    # TODO: Add logic for fedora_copr, debian_ppa here
+    
+    #
+    
     # Display summary
     print(f"\n{BLUE}=== Sync Summary ==={NC}")
+    
+    # 
+    print(f"{BLUE}--- Official Repos ---{NC}")
     if to_install:
         print(f"{GREEN}Packages to install ({len(to_install)}):{NC}")
         for pkg in to_install: print(f"  {pkg}")
     else:
-        print(f"{GREEN}No packages to install{NC}")
+        print(f"{GREEN}No official packages to install{NC}")
     
     if to_remove:
         print(f"\n{YELLOW}Packages to remove ({len(to_remove)}):{NC}")
         for pkg in to_remove: print(f"  {pkg}")
     elif args.prune:
-        print(f"{GREEN}No packages to remove{NC}")
+        print(f"{GREEN}No official packages to remove{NC}")
 
-    if not to_install and not to_remove:
+    # 
+    # --- Helper Summary ---
+    #
+    if to_install_aur:
+        print(f"\n{BLUE}--- Arch AUR ---{NC}")
+        print(f"{GREEN}Packages to install ({len(to_install_aur)}):{NC}")
+        for pkg in to_install_aur: print(f"  {pkg}")
+
+    if not to_install and not to_remove and not to_install_aur: #
         print(f"\n{GREEN}System is already in sync!{NC}")
         return
 
@@ -229,12 +265,17 @@ def cmd_sync(provider, args):
     if not args.no_backup:
         create_backup()
 
+    # 
+    # --- Run Installers ---
+    #
+    
+    # 1. Official Packages
     if to_install:
-        print(f"\n{BLUE}Installing packages...{NC}")
+        print(f"\n{BLUE}Installing official packages...{NC}")
         if provider.install(to_install):
             print(f"{GREEN}Packages installed successfully{NC}")
         else:
-            print(f"{RED}Error: Failed to install packages{NC}")
+            print(f"{RED}Error: Failed to install official packages{NC}")
             
     if to_remove:
         print(f"\n{BLUE}Removing packages...{NC}")
@@ -243,17 +284,35 @@ def cmd_sync(provider, args):
         else:
             print(f"{RED}Error: Failed to remove packages{NC}")
 
+    # 2. AUR Packages
+    if to_install_aur:
+        print(f"\n{BLUE}Installing AUR packages...{NC}")
+        # We check if the provider *has* the 'install_aur' method
+        if hasattr(provider, "install_aur"):
+            if provider.install_aur(to_install_aur):
+                print(f"{GREEN}AUR packages installed successfully{NC}")
+            else:
+                print(f"{RED}Error: Failed to install AUR packages{NC}")
+        else:
+            print(f"{YELLOW}Warning: AUR packages declared, but this system's provider ({provider.__class__.__name__}) does not support them. Skipping.{NC}")
+
+    #
+    
     # TODO: Post-install hooks
     
     print(f"\n{BLUE}Updating state file...{NC}")
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     try:
+        # 
         with open(STATE_FILE, 'w') as f:
+            # We only track official packages in the state file for pruning
             yaml.dump({"packages": sorted(list(declared_packages))}, f)
+            #
     except Exception as e:
         print(f"{RED}Error writing state file {STATE_FILE}: {e}{NC}")
         
     print(f"\n{GREEN}Sync complete!{NC}")
+    #
 
 def cmd_module_list(provider, args):
     """
@@ -275,6 +334,8 @@ def cmd_module_list(provider, args):
             
             desc = data.get("description", "No description")
             pkg_count = len(data.get("packages", []))
+            aur_count = len(data.get("arch_aur", [])) #
+            
             conflicts = ", ".join(data.get("conflicts", []))
             
             if module_name in enabled_modules:
@@ -284,7 +345,7 @@ def cmd_module_list(provider, args):
                 
             print(f"  {BLUE}{module_name}{NC} [{status}]")
             print(f"    {desc}")
-            print(f"    Packages: {pkg_count}")
+            print(f"    Packages: {pkg_count} (Official) | {aur_count} (AUR)") #
             if conflicts:
                 print(f"    {RED}Conflicts with: {conflicts}{NC}")
             print("")
@@ -374,13 +435,19 @@ def cmd_status(provider, args):
         print("  (none)")
 
     # Package summary
-    declared = get_declared_packages(config)
+    all_package_lists = get_declared_packages(config) #
+    declared = all_package_lists["packages"] #
     installed = provider.get_installed_packages()
     to_install = declared - installed
 
     print(f"\n{BLUE}Packages:{NC}")
-    print(f"  Declared: {len(declared)}")
-    print(f"  To install: {len(to_install)}")
+    print(f"  Declared: {len(declared)} (Official)")
+    print(f"  To install: {len(to_install)} (Official)")
+    
+    # 
+    if all_package_lists.get("arch_aur"):
+        print(f"  Declared: {len(all_package_lists['arch_aur'])} (AUR)")
+    #
     
     if to_install:
         print(f"\n{YELLOW}System is out of sync. Run 'wcli sync' to install.{NC}")
@@ -447,15 +514,18 @@ def cmd_init(provider, args):
         (STATE_DIR / ".gitignore").write_text("# Auto-generated state files\ninstalled.yaml\n")
         print(f"{GREEN}✓{NC} Created state/.gitignore")
         
+        # 
         # Create example module
         (PACKAGES_DIR / "modules" / "example.yaml").write_text(
             "# Example module template\n\n"
             "description: Example module - customize or delete this\n\n"
             "packages:\n  # - package1\n  # - package2\n\n"
+            "arch_aur:\n  # - aur_package_1\n\n"
             "conflicts: []\n\n"
             "post_install_hook: \"\"\n"
         )
-        print(f"{GREEN}✓{NC} Created example module")
+        print(f"{GREEN}✓{NC} Created example module (with 'arch_aur' key)")
+        #
         
         # Create README.md
         (SYS_CONFIG_DIR / "README.md").write_text(
