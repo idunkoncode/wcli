@@ -105,7 +105,6 @@ def write_config(config: dict):
         print(f"{RED}Error writing {CONFIG_FILE}: {e}{NC}")
         sys.exit(1)
 
-# <-- CHANGE: This function is now more powerful. -->
 def get_declared_packages(config: dict) -> dict:
     """
     Parses all YAMLs to get a dictionary of all declared package lists.
@@ -172,25 +171,51 @@ def get_declared_packages(config: dict) -> dict:
     return package_lists
 
 def run_cmd(cmd: list, cwd: Path = None, check: bool = True) -> subprocess.CompletedProcess:
-    """Helper to run a subprocess command."""
+    """Helper to run a non-interactive command and capture output."""
     return subprocess.run(cmd, cwd=cwd, check=check, text=True, capture_output=True, errors='ignore')
 
-def create_backup():
-    """Creates a Timeshift backup."""
-    if not shutil.which("timeshift"):
-        print(f"{YELLOW}Warning: 'timeshift' command not found. Skipping backup.{NC}")
-        return
-        
-    print(f"{BLUE}Creating Timeshift snapshot before sync...{NC}")
+# <-- NEW: Command runner for interactive commands like 'list' or 'restore' -->
+def run_interactive_cmd(cmd: list, cwd: Path = None, check: bool = True) -> bool:
+    """Helper to run an interactive command that streams output."""
     try:
-        run_cmd(["sudo", "timeshift", "--create", "--comments", "wcli autobackup", "--scripted"], check=True)
-        print(f"{GREEN}Backup created successfully{NC}")
+        # Runs the command and streams STDOUT/STDERR to the user's terminal
+        subprocess.run(cmd, cwd=cwd, check=check)
+        return True
     except (subprocess.CalledProcessError, FileNotFoundError):
-        print(f"{YELLOW}Warning: Failed to create Timeshift backup. Continuing anyway...{NC}")
+        return False
+    except KeyboardInterrupt:
+        print(f"\n{YELLOW}Command cancelled.{NC}")
+        return False
+
+# <-- CHANGE: Renamed to be generic -->
+def create_auto_snapshot():
+    """Creates a pre-sync snapshot using snapper or timeshift."""
+    
+    comment = "wcli-sync auto-snapshot"
+    
+    # --- NEW: Snapper and Timeshift auto-detection ---
+    if shutil.which("snapper"):
+        print(f"{BLUE}Using snapper to create snapshot...{NC}")
+        try:
+            # Snapper's 'create' command is designed for this
+            run_cmd(["sudo", "snapper", "create", "--type", "pre", "--description", comment, "--cleanup-algorithm", "timeline"])
+            print(f"{GREEN}Snapper snapshot created successfully{NC}")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print(f"{YELLOW}Warning: Failed to create snapper snapshot. Continuing anyway...{NC}")
+            
+    elif shutil.which("timeshift"):
+        print(f"{BLUE}Using timeshift to create snapshot...{NC}")
+        try:
+            run_cmd(["sudo", "timeshift", "--create", "--comments", comment, "--scripted"])
+            print(f"{GREEN}Timeshift snapshot created successfully{NC}")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print(f"{YELLOW}Warning: Failed to create timeshift snapshot. Continuing anyway...{NC}")
+            
+    else:
+        print(f"{YELLOW}Warning: No snapshot tool (snapper, timeshift) found. Skipping snapshot.{NC}")
 
 # --- Command Functions ---
 
-# <-- CHANGE: This function is now much smarter. -->
 def cmd_sync(provider, args):
     """
     Declarative sync command.
@@ -220,7 +245,6 @@ def cmd_sync(provider, args):
             print(f"{YELLOW}Warning: State file not found. Cannot prune.{NC}")
     
     # --- Helper Package Logic ---
-    # Convert sets to lists for installation
     helpers_to_run = {
         "aur": (provider.install_aur, list(all_package_lists["arch_aur"])),
         "copr": (provider.install_copr, all_package_lists["fedora_copr"]),
@@ -273,8 +297,9 @@ def cmd_sync(provider, args):
             print(f"{YELLOW}Cancelled{NC}")
             return
 
+    # <-- CHANGE: Call the new generic snapshot function -->
     if not args.no_backup:
-        create_backup()
+        create_auto_snapshot()
 
     # --- Run Installers ---
     
@@ -315,7 +340,6 @@ def cmd_sync(provider, args):
         
     print(f"\n{GREEN}Sync complete!{NC}")
 
-# <-- CHANGE: Updated module list to show helper counts -->
 def cmd_module_list(provider, args):
     """
     Lists all available modules and their status.
@@ -422,355 +446,4 @@ def cmd_module_disable(provider, args):
     config["enabled_modules"] = sorted(list(enabled_modules))
     write_config(config)
     print(f"{GREEN}Module '{module_name}' disabled{NC}")
-    print("Run 'wcli sync --prune' to remove packages")
-
-# <-- CHANGE: Updated status to show helper counts -->
-def cmd_status(provider, args):
-    """
-    Shows the current configuration and sync status.
-    """
-    print(f"{BLUE}=== Configuration Status ==={NC}")
-    try:
-        config = load_config()
-    except SystemExit:
-        return # Handle case where config doesn't exist yet
-
-    print(f"  Distro: {GREEN}{provider.__class__.__module__.split('.')[-1]}{NC}")
-    print(f"  Hostname: {GREEN}{config.get('host', 'Not Set')}{NC}")
-    
-    enabled_modules = config.get("enabled_modules", [])
-    print(f"\n{BLUE}Enabled Modules ({len(enabled_modules)}):{NC}")
-    if enabled_modules:
-        for module in enabled_modules:
-            print(f"  - {module}")
-    else:
-        print("  (none)")
-
-    # Package summary
-    all_package_lists = get_declared_packages(config)
-    declared_official = all_package_lists["packages"]
-    installed = provider.get_installed_packages()
-    to_install = declared_official - installed
-
-    print(f"\n{BLUE}Packages:{NC}")
-    print(f"  Declared: {len(declared_official)} (Official)")
-    print(f"  To install: {len(to_install)} (Official)")
-    
-    # Show counts for all helpers that have packages
-    for name, pkgs in all_package_lists.items():
-        if name != "packages" and pkgs:
-             print(f"  Declared: {len(pkgs)} ({name.upper()})")
-    
-    if to_install or any(pkgs for name, pkgs in all_package_lists.items() if name != "packages"):
-        if not to_install and all(not pkgs for name, pkgs in all_package_lists.items() if name != "packages"):
-             print(f"\n{GREEN}System is in sync!{NC}")
-        else:
-             print(f"\n{YELLOW}System is out of sync. Run 'wcli sync' to install.{NC}")
-    else:
-        print(f"\n{GREEN}System is in sync!{NC}")
-
-# <-- CHANGE: Updated init to create example helper keys -->
-def cmd_init(provider, args):
-    """
-    Initializes the wcli-config directory structure.
-    """
-    print(f"{BLUE}Initializing wcli-config directory structure...{NC}")
-    
-    if SYS_CONFIG_DIR.exists() and not args.force:
-        print(f"{YELLOW}Warning: {SYS_CONFIG_DIR} already exists.{NC}")
-        choice = input("Reinitialize? This will backup existing files. [y/N] ")
-        if not choice.lower().startswith('y'):
-            print(f"{YELLOW}Cancelled{NC}")
-            return
-        
-        try:
-            backup_dir = SYS_CONFIG_DIR.parent / f"wcli-config.backup.{os.times().elapsed}"
-            print(f"{BLUE}Backing up existing directory to: {backup_dir}{NC}")
-            SYS_CONFIG_DIR.rename(backup_dir)
-        except Exception as e:
-            print(f"{RED}Error backing up directory: {e}{NC}")
-            return
-
-    try:
-        # Create directory structure
-        (PACKAGES_DIR / "hosts").mkdir(parents=True, exist_ok=True)
-        (PACKAGES_DIR / "modules").mkdir(parents=True, exist_ok=True)
-        (STATE_DIR).mkdir(parents=True, exist_ok=True)
-        (SYS_CONFIG_DIR / "scripts").mkdir(parents=True, exist_ok=True)
-        
-        hostname = os.uname().nodename
-        
-        # Create config.yaml
-        config_data = {
-            "host": hostname,
-            "enabled_modules": [],
-            "additional_packages": [],
-            "auto_prune": False
-        }
-        write_config(config_data)
-        print(f"{GREEN}✓{NC} Created config.yaml with hostname: {hostname}")
-
-        # Create base.yaml (distro-specific)
-        base_data = provider.get_base_packages()
-        with open(PACKAGES_DIR / "base.yaml", 'w') as f:
-            yaml.dump(base_data, f, sort_keys=False)
-        print(f"{GREEN}✓{NC} Created packages/base.yaml for {provider.__class__.__module__}")
-
-        # Create host-specific package file
-        host_data = {
-            "description": f"Packages specific to {hostname}",
-            "packages": [],
-            "exclude": []
-        }
-        with open(PACKAGES_DIR / "hosts" / f"{hostname}.yaml", 'w') as f:
-            yaml.dump(host_data, f, sort_keys=False)
-        print(f"{GREEN}✓{NC} Created packages/hosts/{hostname}.yaml")
-        
-        # Create .gitignore
-        (STATE_DIR / ".gitignore").write_text("# Auto-generated state files\ninstalled.yaml\n")
-        print(f"{GREEN}✓{NC} Created state/.gitignore")
-        
-        # Create example module
-        (PACKAGES_DIR / "modules" / "example.yaml").write_text(
-            "# Example module template\n\n"
-            "description: Example module - customize or delete this\n\n"
-            "packages:\n  # - package1\n\n"
-            "arch_aur:\n  # - aur_package_1\n\n"
-            "fedora_copr:\n  # \"user/repo\":\n  #   - copr_package_1\n\n"
-            "debian_ppa:\n  # \"ppa:user/repo\":\n  #   - ppa_package_1\n\n"
-            "conflicts: []\n\n"
-            "post_install_hook: \"\"\n"
-        )
-        print(f"{GREEN}✓{NC} Created example module (with helper keys)")
-        
-        # Create README.md
-        (SYS_CONFIG_DIR / "README.md").write_text(
-            "# wcli-config\n\n"
-            "Declarative package management configuration for Linux.\n\n"
-            "## Structure\n\n"
-            "- `config.yaml` - Main configuration file\n"
-            "- `packages/base.yaml` - Base packages for all machines\n"
-            "- `packages/hosts/` - Host-specific package configurations\n"
-            "- `packages/modules/` - Optional package modules\n"
-            "- `scripts/` - Post-install hook scripts\n"
-            "- `state/` - Auto-generated state files (git-ignored)\n\n"
-            "## Usage\n\n"
-            "Run `wcli help` to see commands.\n"
-        )
-        print(f"{GREEN}✓{NC} Created README.md")
-
-        print(f"\n{GREEN}Initialization complete!{NC}")
-        print("Next steps:\n  1. Edit YAML files in packages/\n  2. Run 'wcli repo init' (recommended)\n  3. Run 'wcli sync'")
-    except Exception as e:
-        print(f"{RED}Error during initialization: {e}{NC}")
-
-def cmd_repo(provider, args):
-    """
-    Handles all git repository subcommands.
-    """
-    if not shutil.which("git"):
-        print(f"{RED}Error: 'git' command not found. Please install git.{NC}")
-        return
-        
-    if not SYS_CONFIG_DIR.exists():
-        print(f"{RED}Error: Config directory not found. Run 'wcli init' first.{NC}")
-        return
-
-    repo_cmd = args.repo_command
-    
-    try:
-        if repo_cmd == "init":
-            if (SYS_CONFIG_DIR / ".git").exists():
-                print(f"{YELLOW}This directory is already a git repository.{NC}")
-                return
-            run_cmd(["git", "init"], cwd=SYS_CONFIG_DIR)
-            (SYS_CONFIG_DIR / ".gitignore").write_text("config.yaml\nstate/\n")
-            run_cmd(["git", "add", "."], cwd=SYS_CONFIG_DIR)
-            run_cmd(["git", "commit", "-m", "Initial wcli-config setup"], cwd=SYS_CONFIG_DIR)
-            print(f"{GREEN}✓ Git repository initialized in {SYS_CONFIG_DIR}{NC}")
-            print("Add a remote with: git remote add origin <url>")
-
-        elif repo_cmd == "clone":
-            if not args.url:
-                print(f"{RED}Error: --url is required for clone.{NC}")
-                return
-            if SYS_CONFIG_DIR.exists():
-                print(f"{RED}Error: {SYS_CONFIG_DIR} already exists. Remove or move it first.{NC}")
-                return
-            run_cmd(["git", "clone", args.url, str(SYS_CONFIG_DIR)])
-            print(f"{GREEN}✓ Repository cloned to {SYS_CONFIG_DIR}{NC}")
-            print("Run 'wcli sync' to apply.")
-
-        # All other commands require an existing repo
-        elif not (SYS_CONFIG_DIR / ".git").exists():
-            print(f"{RED}Error: Not a git repository. Run 'wcli repo init' first.{NC}")
-            return
-            
-        elif repo_cmd == "push":
-            msg = args.message or f"Update wcli-config from {os.uname().nodename}"
-            run_cmd(["git", "add", "."], cwd=SYS_CONFIG_DIR)
-            run_cmd(["git", "commit", "-m", msg], cwd=SYS_CONFIG_DIR, check=False) # Allow empty commit
-            print(f"{BLUE}Pushing to remote...{NC}")
-            subprocess.run(["git", "push"], cwd=SYS_CONFIG_DIR, check=True) # Stream output
-            print(f"{GREEN}✓ Changes pushed successfully!{NC}")
-
-        elif repo_cmd == "pull":
-            print(f"{BLUE}Pulling updates from remote...{NC}")
-            subprocess.run(["git", "pull"], cwd=SYS_CONFIG_DIR, check=True) # Stream output
-            print(f"{GREEN}✓ Updates pulled successfully!{NC}")
-            print("Run 'wcli sync' to apply any new package changes.")
-                
-        elif repo_cmd == "status":
-            print(f"{BLUE}Repository Status:{NC}")
-            subprocess.run(["git", "status"], cwd=SYS_CONFIG_DIR)
-            
-    except subprocess.CalledProcessError as e:
-        print(f"{RED}Error running git command '{repo_cmd}':{NC}")
-        print(e.stderr)
-        print(e.stdout)
-    except Exception as e:
-        print(f"{RED}An unexpected error occurred: {e}{NC}")
-
-def cmd_timeshift(provider, args):
-    """
-    Wrapper for Timeshift commands.
-    """
-    if not shutil.which("timeshift"):
-        print(f"{RED}Error: 'timeshift' command not found.{NC}")
-        deps = provider.get_deps()
-        print(f"Install with: {deps.get('timeshift', 'your package manager')}")
-        return
-        
-    try:
-        cmd = ["sudo", "timeshift"]
-        if args.list:
-            cmd.append("--list")
-        elif args.create:
-            cmd.extend(["--create", "--comments", "wcli backup (manual)"])
-        elif args.restore:
-            cmd.append("--restore")
-            if args.snapshot: cmd.extend(["--snapshot", args.snapshot])
-        elif args.delete:
-            cmd.extend(["--delete", "--snapshot", args.delete])
-        elif args.check:
-            cmd.append("--check")
-        else:
-            print("No timeshift action specified.")
-            return
-
-        subprocess.run(cmd, check=True)
-
-    except subprocess.CalledProcessError:
-        print(f"{RED}Error: Timeshift command failed.{NC}")
-    except Exception as e:
-        print(f"{RED}An unexpected error occurred: {e}{NC}")
-
-# --- Main Execution ---
-
-def main():
-    # Load provider *before* parsing args
-    provider = get_provider()
-
-    parser = argparse.ArgumentParser(
-        description="wcli - A multi-distro declarative CLI wrapper tool"
-    )
-    subparsers = parser.add_subparsers(dest="command", help="Subcommand to run")
-    subparsers.required = True
-
-    # --- init ---
-    parser_init = subparsers.add_parser("init", help="Initialize wcli-config directory structure")
-    parser_init.add_argument("--force", action="store_true", help="Force re-initialization")
-    parser_init.set_defaults(func=cmd_init)
-
-    # --- update ---
-    parser_update = subparsers.add_parser("update", help="Update system packages")
-    parser_update.set_defaults(func=lambda p, a: p.update())
-
-    # --- install ---
-    parser_install = subparsers.add_parser("install", help="Install a package")
-    parser_install.add_argument("packages", nargs="+", help="Package(s) to install")
-    parser_install.set_defaults(func=lambda p, a: p.install(a.packages))
-
-    # --- remove ---
-    parser_remove = subparsers.add_parser("remove", help="Remove a package")
-    parser_remove.add_argument("packages", nargs="+", help="Package(s) to remove")
-    parser_remove.set_defaults(func=lambda p, a: p.remove(a.packages))
-
-    # --- search (for anything else) ---
-    parser_search = subparsers.add_parser("search", help="Search for a package")
-    parser_search.add_argument("package", help="Package to search for")
-    parser_search.set_defaults(func=lambda p, a: p.search(a.package))
-
-    # --- sync ---
-    parser_sync = subparsers.add_parser("sync", help="Install packages to match configuration")
-    parser_sync.add_argument("-d", "--dry-run", action="store_true", help="Preview changes without applying")
-    parser_sync.add_argument("--prune", action="store_true", help="Remove packages not in configuration")
-    parser_sync.add_argument("--force", action="store_true", help="Skip confirmation prompts")
-    parser_sync.add_argument("--no-backup", action="store_true", help="Skip automatic Timeshift backup")
-    parser_sync.set_defaults(func=cmd_sync)
-
-    # --- module ---
-    parser_module = subparsers.add_parser("module", help="Manage package modules")
-    module_sub = parser_module.add_subparsers(dest="module_command", required=True)
-    mod_list = module_sub.add_parser("list", help="Show all available modules and their status")
-    mod_list.set_defaults(func=cmd_module_list)
-    mod_enable = module_sub.add_parser("enable", help="Enable a module")
-    mod_enable.add_argument("name", help="Module name to enable")
-    mod_enable.set_defaults(func=cmd_module_enable)
-    mod_disable = module_sub.add_parser("disable", help="Disable a module")
-    mod_disable.add_argument("name", help="Module name to disable")
-    mod_disable.set_defaults(func=cmd_module_disable)
-
-    # --- status ---
-    parser_status = subparsers.add_parser("status", help="Show current configuration and sync status")
-    parser_status.set_defaults(func=cmd_status)
-
-    # --- repo ---
-    parser_repo = subparsers.add_parser("repo", help="Manage wcli-config git repository")
-    repo_sub = parser_repo.add_subparsers(dest="repo_command", required=True)
-    repo_init = repo_sub.add_parser("init", help="Set up git for wcli-config (first computer)")
-    repo_init.set_defaults(func=cmd_repo)
-    repo_clone = repo_sub.add_parser("clone", help="Clone existing wcli-config (new computer)")
-    repo_clone.add_argument("--url", help="Git repository URL to clone")
-    repo_clone.set_defaults(func=cmd_repo)
-    repo_push = repo_sub.add_parser("push", help="Commit and push changes")
-    repo_push.add_argument("-m", "--message", help="Commit message")
-    repo_push.set_defaults(func=cmd_repo)
-    repo_sub.add_parser("pull", help="Pull updates from other machines").set_defaults(func=cmd_repo)
-    repo_sub.add_parser("status", help="Show git status").set_defaults(func=cmd_repo)
-    
-    # --- Timeshift (backup/restore) ---
-    parser_ts = subparsers.add_parser("backup", help="Manage Timeshift backups")
-    ts_group = parser_ts.add_mutually_exclusive_group(required=True)
-    ts_group.add_argument("--list", action="store_true", help="List snapshots")
-    ts_group.add_argument("--create", action="store_true", help="Create a new snapshot")
-    ts_group.add_argument("--restore", action="store_true", help="Restore snapshot (interactively or by name)")
-    ts_group.add_argument("--snapshot", help="Snapshot name for restore/delete")
-    ts_group.add_argument("--delete", help="Delete a specific snapshot by name")
-    ts_group.add_argument("--check", action="store_true", help="Check snapshot integrity")
-    parser_ts.set_defaults(func=cmd_timeshift)
-
-    # --- Argument Fallback for 'search' ---
-    if len(sys.argv) == 2 and not sys.argv[1].startswith('-') and sys.argv[1] not in subparsers.choices:
-        args = parser_search.parse_args([sys.argv[1]])
-    else:
-        args = parser.parse_args()
-
-    args.func(provider, args)
-
-
-if __name__ == "__main__":
-    # This allows the script to find the 'providers' directory
-    # when installed in /usr/local/lib/wcli/
-    script_dir = Path(__file__).parent.resolve()
-    sys.path.insert(0, str(script_dir))
-    
-    try:
-        import yaml
-    except ImportError:
-        print(f"{RED}Error: PyYAML dependency not found.{NC}")
-        print("Please install it with: pip install pyyaml")
-        print("(Or 'sudo apt install python3-yaml', 'sudo dnf install python3-pyyaml', etc.)")
-        sys.exit(1)
-        
-    main()
+    print("Run '
