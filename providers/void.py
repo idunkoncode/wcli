@@ -56,16 +56,15 @@ class Provider(BaseProvider):
             return set()
 
     def get_deps(self) -> dict:
-        # <-- CHANGE: Added snapper -->
         return {
             "yq": "sudo xbps-install -y yq",
             "timeshift": "sudo xbps-install -y timeshift",
             "snapper": "sudo xbps-install -y snapper",
+            "flatpak": "sudo xbps-install -y flatpak",
             "xtools": "sudo xbps-install -y xtools"
         }
 
     def get_base_packages(self) -> dict:
-        # <-- CHANGE: Added timeshift (Void default) -->
         return {
             "description": "Base packages for all Void machines",
             "packages": [
@@ -73,8 +72,9 @@ class Provider(BaseProvider):
                 "vim",
                 "git",
                 "yq",
-                "xtools", # For xbps-src
-                "timeshift"
+                "xtools",
+                "timeshift",
+                "flatpak"
             ],
             "void_src": [
                 "heroic"
